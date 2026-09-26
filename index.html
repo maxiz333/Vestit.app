@@ -2118,7 +2118,66 @@ function bindEvents(){
   });
 
   initCloudinaryWidget();
+  
+  // Click sul logo → apre menu sync
+  const logoEl = document.querySelector('.logo');
+  if(logoEl){
+    logoEl.style.cursor = 'pointer';
+    logoEl.addEventListener('click', () => openOverlay($('logoMenuOverlay')));
+  }
 
+  $('logoMenuClose').addEventListener('click', () => closeOverlay($('logoMenuOverlay')));
+
+  $('btnForceUpload').addEventListener('click', () => {
+    if(!window.fbSet || !window.fbRef || !window.fbDb){
+      toast('⚠️ Firebase non pronto');
+      return;
+    }
+    const payload = {
+      categories: state.categories,
+      articles: state.articles,
+      activeCategory: state.activeCategory
+    };
+    window.fbSet(window.fbRef(window.fbDb, 'catalogo'), payload)
+      .then(() => {
+        toast('✅ Caricato su Firebase');
+        closeOverlay($('logoMenuOverlay'));
+      })
+      .catch(err => {
+        console.error(err);
+        toast('⚠️ Errore caricamento');
+      });
+  });
+
+  $('btnForceDownload').addEventListener('click', () => {
+    if(!window.fbGet || !window.fbRef || !window.fbDb){
+      toast('⚠️ Firebase non pronto');
+      return;
+    }
+    window.fbGet(window.fbRef(window.fbDb, 'catalogo'))
+      .then(snap => {
+        if(!snap.exists()){
+          toast('⚠️ Nessun dato su Firebase');
+          return;
+        }
+        const data = snap.val();
+        if(data && Array.isArray(data.categories) && Array.isArray(data.articles)){
+          state.categories = data.categories;
+          state.articles = migrateArticles(data.articles);
+          state.activeCategory = data.activeCategory || 'all';
+          state.currentIndex = 0;
+          state.imgIndex = 0;
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e){}
+          render();
+          toast('✅ Ricaricato da Firebase');
+          closeOverlay($('logoMenuOverlay'));
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        toast('⚠️ Errore lettura');
+      });
+  });
 }
 
 /* ============================================================
@@ -2158,6 +2217,20 @@ document.addEventListener('DOMContentLoaded', init);
 
 })();
 </script>
+<div class="overlay" id="logoMenuOverlay">
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-head">
+      <h3>Sincronizzazione</h3>
+      <button class="close-x" id="logoMenuClose" type="button">✕</button>
+    </div>
+    <button class="tenda-btn" id="btnForceUpload" type="button">📤 Forza caricamento su Firebase</button>
+    <button class="tenda-btn" id="btnForceDownload" type="button">⬇️ Ricarica da Firebase</button>
+    <div class="tenda-hint">
+      <strong>📤 Carica</strong> = manda quello che vedi al cloud<br>
+      <strong>⬇️ Scarica</strong> = riporta quello che c'è nel cloud
+    </div>
+  </div>
+</div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
