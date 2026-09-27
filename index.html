@@ -190,16 +190,29 @@ header h1{
 
 .photo-frame{
   position:relative; width:100%;
-  aspect-ratio:4/5; max-height:60vh;
+  aspect-ratio: 3 / 4;      /* default, cambia se la foto ha altro formato */
   background:#000;
   border:2px solid #262626; border-radius:3px;
   overflow:hidden;
   display:flex; align-items:center; justify-content:center;
 }
 .photo-frame img{
-  width:100%; height:100%;
-  object-fit:cover; object-position:center;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
   animation: imgIn .35s ease;
+}
+.photo-frame{
+  cursor:grab;
+  touch-action:pan-y;
+}
+.photo-frame.dragging{
+  cursor:grabbing;
+}
+.photo-frame.dragging img{
+  transition:none;
 }
 @keyframes imgIn{ from{opacity:.25; transform:scale(1.03);} to{opacity:1; transform:scale(1);} }
 
@@ -236,7 +249,7 @@ header h1{
 .thumb{
   flex:0 0 auto; width:52px; height:52px; padding:0;
   border:2px solid #2a2a2a; border-radius:3px;
-  background-size:cover; background-position:center;
+  background-size:contain; background-position:center;
   background-color:#000; cursor:pointer;
   opacity:.55; transition: opacity .15s, border-color .15s;
 }
@@ -393,7 +406,7 @@ header h1{
 .li-thumb{
   flex:0 0 auto;
   width:60px; height:60px; border-radius:3px;
-  background-color:#000; background-size:cover; background-position:center;
+  background-color:#000; background-size:contain; background-position:center;
   border:1px solid #2a2a2a;
 }
 .li-info{ flex:1 1 auto; min-width:0; }
@@ -792,6 +805,39 @@ header h1{
   transition: background .15s, border-color .15s;
 }
 .btn-add-img:hover{ background: #333; border-color: var(--yellow); }
+
+.img-editor-stage{
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/5;
+  max-height: 55vh;
+  background: #000;
+  border: 2px solid #262626;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.img-editor-stage.dragging{ cursor: grabbing; }
+.img-editor-stage img{
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+.img-thumb-edit{
+  position: absolute; bottom: -7px; right: -7px;
+  width: 22px; height: 22px;
+  background: var(--yellow); color: #000;
+  border: 2px solid #000; border-radius: 50%;
+  font-size: 10px; font-weight: 900;
+  cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+.img-thumb-wrap{ cursor: pointer; }
 </style>
 </head>
 
@@ -811,7 +857,7 @@ header h1{
   <div class="book" id="book">
 
     <section class="page page-left">
-      <div class="photo-frame">
+      <div class="photo-frame" id="photoFrame">
         <img id="artImage" src="" alt="">
         <button class="car-arrow left"  id="imgPrev" type="button" aria-label="Foto precedente" hidden>‹</button>
         <button class="car-arrow right" id="imgNext" type="button" aria-label="Foto successiva" hidden>›</button>
@@ -984,6 +1030,26 @@ header h1{
         </div>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ================= EDITOR FOTO ================= -->
+<div class="overlay" id="imgEditorOverlay">
+  <div class="sheet" style="max-width:500px;">
+    <div class="sheet-head">
+      <h3>Posiziona foto</h3>
+      <button class="close-x" id="imgEditorClose" type="button">✕</button>
+    </div>
+    <div class="img-editor-stage" id="imgEditorStage">
+      <img id="imgEditorImg" src="" alt="">
+    </div>
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin:10px 0 14px;">
+      Trascina la foto per scegliere cosa mostrare
+    </p>
+    <div class="panel-actions-row">
+      <button class="btn-ghost"  id="imgEditorCancel" type="button">Annulla</button>
+      <button class="btn-yellow" id="imgEditorSave"   type="button">Salva posizione</button>
+    </div>
   </div>
 </div>
 
@@ -1423,9 +1489,20 @@ function renderImage(art){
     state.imgIndex = 0;
   }
   const src = imgs.length ? imgs[state.imgIndex] : placeholderImg(art.name);
+  const frame = document.getElementById('photoFrame') || artImage.parentElement;
+
   artImage.onerror = function(){ this.onerror = null; this.src = placeholderImg(art.name); };
+  artImage.onload = function(){
+    // Adatta il frame alle proporzioni della foto
+    const w = this.naturalWidth || 3;
+    const h = this.naturalHeight || 4;
+    if(frame){
+      frame.style.aspectRatio = w + ' / ' + h;
+    }
+  };
   artImage.src = src;
   artImage.alt = art.name || 'Articolo';
+  artImage.style.objectPosition = 'center';
 
   const multi = imgs.length > 1;
   imgPrev.hidden    = !multi;
@@ -1440,8 +1517,6 @@ function renderImage(art){
       t.type = 'button';
       t.className = 'thumb' + (i === state.imgIndex ? ' active' : '');
       t.style.backgroundImage = 'url("' + url.replace(/"/g, '\\"') + '")';
-      t.setAttribute('aria-label', 'Vai alla foto ' + (i + 1));
-      t.addEventListener('click', () => { state.imgIndex = i; renderImage(art); });
       thumbsEl.appendChild(t);
     });
   }
@@ -1479,6 +1554,8 @@ function renderArticleList(){
     const imgs = imagesOf(art);
     const thumbUrl = imgs.length ? imgs[0] : placeholderImg(art.name);
     thumb.style.backgroundImage = 'url("' + thumbUrl.replace(/"/g, '\\"') + '")';
+    const tpos = (art.imagePositions && art.imagePositions[0]) || '50% 50%';
+thumb.style.backgroundPosition = tpos;
 
     const info = document.createElement('div');
     info.className = 'li-info';
@@ -1757,6 +1834,7 @@ function updateTotalQtyDisplay(){
 }
 
 let currentImages = [];
+let currentPositions = [];
 
 function openArticleModal(articleId){
   const article = articleId ? state.articles.find((a) => a.id === articleId) : null;
@@ -1775,7 +1853,7 @@ function openArticleModal(articleId){
   fCode.value  = article ? (article.code && article.code !== '—' ? article.code : '') : '';
   fPrice.value = article ? String(article.price != null ? article.price : '').replace('.', ',') : '';
   currentImages = article && Array.isArray(article.images) ? article.images.slice() : [];
-renderImagesPreview();
+  currentPositions = [];
 
   const real = state.categories.filter((c) => !c.locked);
   if(real.length){
@@ -1823,61 +1901,237 @@ function renderImagesPreview(){
     const box = document.createElement('div');
     box.className = 'img-thumb-wrap';
     box.style.backgroundImage = 'url("' + url.replace(/"/g, '\\"') + '")';
+    box.style.backgroundSize = 'cover';
+    box.style.backgroundPosition = 'center';
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'img-thumb-edit';
+    edit.textContent = '✎';
+    edit.setAttribute('aria-label', 'Modifica posizione');
+    edit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openImageEditor(i);
+    });
 
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'img-thumb-del';
     del.textContent = '✕';
     del.setAttribute('aria-label','Rimuovi foto');
-    del.addEventListener('click', () => {
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
       currentImages.splice(i, 1);
       renderImagesPreview();
     });
-
+  
+    box.appendChild(edit);
     box.appendChild(del);
     imgPreview.appendChild(box);
   });
+}
+  
+  
+
+/* ============ EDITOR POSIZIONE FOTO ============ */
+let editingImgIndex = -1;
+let imgEditorPosX = 50, imgEditorPosY = 50;
+
+function openImageEditor(index){
+  if(index < 0 || index >= currentImages.length) return;
+  editingImgIndex = index;
+  const pos = currentPositions[index] || '50% 50%';
+  const parts = pos.split(/\s+/);
+  imgEditorPosX = parseFloat(parts[0]) || 50;
+  imgEditorPosY = parseFloat(parts[1]) || 50;
+
+  const img = document.getElementById('imgEditorImg');
+  img.src = currentImages[index];
+  img.style.objectPosition = imgEditorPosX + '% ' + imgEditorPosY + '%';
+  openOverlay(document.getElementById('imgEditorOverlay'));
+}
+
+function initImageEditor(){
+  const stage = document.getElementById('imgEditorStage');
+  const img = document.getElementById('imgEditorImg');
+  let dragging = false, lastX = 0, lastY = 0;
+
+  stage.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    stage.classList.add('dragging');
+    try{ stage.setPointerCapture(e.pointerId); }catch(err){}
+  });
+
+  stage.addEventListener('pointermove', (e) => {
+    if(!dragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    imgEditorPosX = Math.max(0, Math.min(100, imgEditorPosX - dx * 0.3));
+    imgEditorPosY = Math.max(0, Math.min(100, imgEditorPosY - dy * 0.3));
+    img.style.objectPosition = imgEditorPosX + '% ' + imgEditorPosY + '%';
+    lastX = e.clientX; lastY = e.clientY;
+  });
+
+  const stop = () => { dragging = false; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', stop);
+  stage.addEventListener('pointercancel', stop);
+  stage.addEventListener('pointerleave', stop);
+
+  document.getElementById('imgEditorClose').addEventListener('click', () => {
+    closeOverlay(document.getElementById('imgEditorOverlay'));
+  });
+  document.getElementById('imgEditorCancel').addEventListener('click', () => {
+    closeOverlay(document.getElementById('imgEditorOverlay'));
+  });
+  document.getElementById('imgEditorSave').addEventListener('click', () => {
+    if(editingImgIndex < 0) return;
+    currentPositions[editingImgIndex] = Math.round(imgEditorPosX) + '% ' + Math.round(imgEditorPosY) + '%';
+    renderImagesPreview();
+    closeOverlay(document.getElementById('imgEditorOverlay'));
+  });
+}
+
+async function compressImage(file){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX = 1600;
+        let w = img.width, h = img.height;
+        if(w > MAX || h > MAX){
+          if(w > h){ h = Math.round(h * MAX / w); w = MAX; }
+          else     { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          const newName = file.name.replace(/\.[^.]+$/, '.jpg');
+          resolve(new File([blob], newName, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============ DRAG FOTO (object-position) ============ */
+const IMG_POS_KEY = 'ferramenta_img_pos';
+let imgPosX = 50, imgPosY = 50;
+
+try{
+  const saved = JSON.parse(localStorage.getItem(IMG_POS_KEY) || 'null');
+  if(saved && typeof saved.x === 'number'){ imgPosX = saved.x; imgPosY = saved.y; }
+}catch(e){}
+
+function applyImgPos(){
+  if(artImage) artImage.style.objectPosition = imgPosX + '% ' + imgPosY + '%';
+}
+
+function initImageDrag(){
+  const frame = document.getElementById('photoFrame');
+  if(!frame) return;
+
+  let dragging = false, startX = 0, startY = 0;
+
+  frame.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('.car-arrow') || e.target.closest('.fit-toggle')) return;
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    frame.classList.add('dragging');
+    try{ frame.setPointerCapture(e.pointerId); }catch(err){}
+  });
+
+  frame.addEventListener('pointermove', (e) => {
+    if(!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    imgPosX = Math.max(0, Math.min(100, imgPosX - dx * 0.25));
+    imgPosY = Math.max(0, Math.min(100, imgPosY - dy * 0.25));
+    applyImgPos();
+    startX = e.clientX; startY = e.clientY;
+  });
+
+  const stop = () => {
+    if(!dragging) return;
+    dragging = false;
+    frame.classList.remove('dragging');
+    try{ localStorage.setItem(IMG_POS_KEY, JSON.stringify({x: imgPosX, y: imgPosY})); }catch(e){}
+  };
+  frame.addEventListener('pointerup', stop);
+  frame.addEventListener('pointercancel', stop);
+  frame.addEventListener('pointerleave', stop);
 }
 
 function initCloudinaryWidget(){
   const fileInput = document.getElementById('fileInputCloud');
   if(!fileInput){
-    console.warn('❌ fileInputCloud non trovato');
+    console.warn('fileInputCloud non trovato');
     return;
   }
-  console.log('✅ Collegamento fileInputCloud...');
 
   fileInput.addEventListener('change', async function(){
     const files = Array.from(fileInput.files);
     if(!files.length) return;
-    toast('📤 Caricamento...');
+
+    toast('📤 Caricamento ' + files.length + ' foto...');
+
     for(const file of files){
+      console.log('File:', file.name, '| Tipo:', file.type, '| Peso:', Math.round(file.size/1024) + 'KB');
+
       try{
+        let fileToSend = file;
+        const isHeic = /heic|heif/i.test(file.type) || /\.heic$|\.heif$/i.test(file.name);
+        if(file.size > 3000000 || isHeic){
+          toast('🔄 Compressione ' + file.name + '...');
+          fileToSend = await compressImage(file);
+          console.log('Compresso:', Math.round(fileToSend.size/1024) + 'KB');
+        }
+
         const fd = new FormData();
-        fd.append('file', file);
+        fd.append('file', fileToSend);
         fd.append('upload_preset', 'vestit.app');
+
         const res = await fetch('https://api.cloudinary.com/v1_1/c8i3qkht/image/upload', {
           method: 'POST',
           body: fd
         });
+
+        if(!res.ok){
+          const txt = await res.text();
+          console.error('HTTP ' + res.status + ':', txt);
+          toast('⚠️ Errore server ' + res.status);
+          continue;
+        }
+
         const data = await res.json();
+        console.log('Cloudinary:', data);
+
         if(data.secure_url){
           currentImages.push(data.secure_url);
           renderImagesPreview();
-          console.log('✅ Foto caricata:', data.secure_url);
+          toast('✅ Foto ' + currentImages.length + ' caricata');
         }else{
-          console.error('❌ Errore Cloudinary:', data);
+          console.error('Errore risposta:', data);
           toast('⚠️ ' + (data.error?.message || 'Errore upload'));
         }
       }catch(err){
-        console.error('❌ Errore rete:', err);
-        toast('⚠️ Errore rete');
+        console.error('Errore:', err);
+        toast('⚠️ Errore: ' + err.message);
       }
     }
     fileInput.value = '';
-    toast('✅ Fatto');
   });
+
+  console.log('✅ Collegamento fileInputCloud...');
 }
+
 function saveArticle(e){
   e.preventDefault();
   formError.hidden = true;
@@ -1887,6 +2141,7 @@ function saveArticle(e){
   const priceRaw = fPrice.value.trim();
   const catId = fCat.value || 'all';
   const imgsRaw = currentImages.join(', ');
+  
 
   if(!name){
     showFormError('Il nome dell\'articolo è obbligatorio.');
@@ -1908,7 +2163,7 @@ function saveArticle(e){
     sizeQty: sizeQty,
     images: imgsRaw
       ? imgsRaw.split(',').map((s) => s.trim()).filter(Boolean)
-      : []
+      : [],
   };
 
   if(editingArticleId){
@@ -2117,7 +2372,11 @@ function bindEvents(){
     if(open) closeOverlay(open);
   });
 
+  
+  initImageEditor();
   initCloudinaryWidget();
+  
+  // Click sul logo → apre menu sync
   
   // Click sul logo → apre menu sync
   const logoEl = document.querySelector('.logo');
