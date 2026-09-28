@@ -199,11 +199,12 @@ header h1{
 .photo-frame img{
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   display: block;
   animation: imgIn .35s ease;
 }
+
 .photo-frame{
   cursor:grab;
   touch-action:pan-y;
@@ -1493,11 +1494,9 @@ function renderImage(art){
 
   artImage.onerror = function(){ this.onerror = null; this.src = placeholderImg(art.name); };
   artImage.onload = function(){
-    // Adatta il frame alle proporzioni della foto
-    const w = this.naturalWidth || 3;
-    const h = this.naturalHeight || 4;
+    // Frame con proporzioni FISSE per coerenza PC/mobile
     if(frame){
-      frame.style.aspectRatio = w + ' / ' + h;
+      frame.style.aspectRatio = '3 / 4';
     }
   };
   artImage.src = src;
